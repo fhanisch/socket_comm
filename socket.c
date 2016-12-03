@@ -1,6 +1,6 @@
 /*
  * 
- * My Socket Library
+ * Socket Communication Library
  * 
  */
 
