@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include "socket_comm.h"
 
 char logStr[2045];
 char lastErr[256];
@@ -34,7 +35,7 @@ int getServerSocket()
 	return serversocket;
 }
 
-int createClient(int port, char *ip)
+status createClient(int port, char *ip)
 {
 	struct sockaddr_in addr;
 
@@ -42,7 +43,7 @@ int createClient(int port, char *ip)
 	if(clientsocket<0)
 	{
 		strcpy(lastErr,"Fehler: Der Socket konnte nicht erstellt werden!\n");    
-		return 1;
+		return err1;
 	}		
 	printf("ClientSocket erstellt...\n");
 	
@@ -55,14 +56,14 @@ int createClient(int port, char *ip)
 	{
 		strcpy(lastErr,"Fehler: Verbindungsaufbau fehlgeschlagen!\n");
 		close(clientsocket);
-		return 2;
+		return err2;
 	}
 	printf("Verbunden mit %s:%i\n",ip,port);
 	
-	return 0;
+	return ok;
 }
 
-int createServer(int port)
+status createServer(int port)
 {
 	struct sockaddr_in addr;
 	
@@ -70,7 +71,7 @@ int createServer(int port)
 	if(acceptsocket<0)
 	{
 		strcpy(lastErr,"Fehler: Der Socket konnte nicht erstellt werden!\n");
-		return 1;
+		return err1;
 	}
 	printf("Accept Socket erstellt: %d\n",acceptsocket);
 	
@@ -82,7 +83,7 @@ int createServer(int port)
 	{
 		strcpy(lastErr,"Bind fehlgeschlagen!\n");
 		close(acceptsocket);
-		return 2;
+		return err2;
 	}
 	printf("Bind Socket mit Port: %i\n\n",port);
 	
@@ -90,10 +91,10 @@ int createServer(int port)
 	{
 		strcpy(lastErr,"Listen fehlgeschlagen!\n");
 		close(acceptsocket);
-		return 3;
+		return err3;
 	}
 	
-	return 0;
+	return ok;
 }
 
 void closeSocket(int sock)
@@ -112,7 +113,7 @@ void closeServer()
 	close(acceptsocket);
 }
 
-int waitForConnections()
+status waitForConnections()
 {
 	struct sockaddr_in client_addr;
 	int sz_sock = sizeof(struct sockaddr_in);
@@ -121,14 +122,14 @@ int waitForConnections()
 	if(serversocket<0)
 	{
 		strcpy(lastErr,"Verbindung fehlgeschlagen!\n");		
-		return 1;
+		return err1;
 	}
 	printf("Verbindung akzeptiert. Verbunden mit Serversocket: %d\n",serversocket);
 	
-	return 0;
+	return ok;
 }
 
-int ssend(int sock, char *buf, unsigned int sz)
+status ssend(int sock, char *buf, unsigned int sz)
 {
   int numbytes;
   
@@ -136,13 +137,13 @@ int ssend(int sock, char *buf, unsigned int sz)
   if (numbytes<=0)
   {
     strcpy(lastErr,"Senden fehlgeschlagen!\n");
-    return 1;
+    return err1;
   }
   printf("%i Bytes gesendet!\n",numbytes);
-  return 0;
+  return ok;
 }
 
-int srcv(int sock, char *buf, unsigned int sz)
+status srcv(int sock, char *buf, unsigned int sz)
 {
   int numbytes;
   
@@ -150,8 +151,8 @@ int srcv(int sock, char *buf, unsigned int sz)
   if (numbytes<=0)
   {
     strcpy(lastErr,"Empfangen fehlgeschlagen!\n");    
-    return 1;
+    return err1;
   }  
   printf("%i Bytes empfangen!\n",numbytes);
-  return 0;
+  return ok;
 }

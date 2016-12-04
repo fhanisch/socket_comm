@@ -3,20 +3,32 @@
 
 #define CMD_OPEN_FILE "open_file"
 #define CMD_READ_FILE "read_file"
+#define CMD_WRITE_FILE "write_file"
+#define CMD_GET_FILESIZE "get_filesize"
+#define CMD_CLOSE_FILE "close_file"
+
+#define NO_FILE "noFile"
+#define FILE_OPEN "file_open"
+#define FILE_CLOSED "file_closed"
+#define INPUT_OK "in_ok"
+#define WRITE_OK "write_ok"
+#define INPUT_FAILED "in_failed"
+
+typedef enum {ok,err1,err2,err3,noConn,noFile,inFailed} status;
 
 char *getLastErr();
 void setLastErr(char *err);
 int getClientSocket();
 int getServerSocket();
-int createClient(int port, char *ip);
-int createServer(int port);
+status createClient(int port, char *ip);
+status createServer(int port);
 void closeSocket(int sock);
 void closeClient();
 void closeServer();
-int waitForConnections();
-int ssend(int sock, char *buf, unsigned int sz);
-int srcv(int sock, char *buf, unsigned int sz);
-int sendCmdToServer(char *sendbuf);
-int rcvCmdFromClient();
+status waitForConnections();
+status ssend(int sock, char *buf, unsigned int sz);
+status srcv(int sock, char *buf, unsigned int sz);
+status sendCmdToServer(void **plhs, int nrhs, void *prhs[]);
+status rcvCmdFromClient();
 
 #endif
