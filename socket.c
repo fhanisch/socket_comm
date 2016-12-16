@@ -137,9 +137,9 @@ status ssend(int sock, char *buf, unsigned int sz)
   if (numbytes<=0)
   {
     strcpy(lastErr,"Senden fehlgeschlagen!\n");
-    return err1;
+    return noConn;
   }
-  printf("%i Bytes gesendet!\n",numbytes);
+  //printf("%i Bytes gesendet!\n",numbytes);
   return ok;
 }
 
@@ -151,8 +151,8 @@ status srcv(int sock, char *buf, unsigned int sz)
   if (numbytes<=0)
   {
     strcpy(lastErr,"Empfangen fehlgeschlagen!\n");    
-    return err1;
+    return noConn;
   }  
-  printf("%i Bytes empfangen!\n",numbytes);
+  //printf("%i Bytes empfangen!\n",numbytes);
   return ok;
 }
