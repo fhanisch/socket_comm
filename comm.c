@@ -4,10 +4,17 @@
 #include <msd.h>
 #include "socket_comm.h"
 
-FILE *file=NULL;
+static speichermedium medium=sdcard;
+static FILE *file=NULL;
+static char rwFlag[1];
 static char *data=NULL;
 static unsigned int dataPtr;
 static libusb_device_handle *handle = NULL;
+
+void setMedium(speichermedium m)
+{
+	medium = m;
+}
 
 status sendCmdToServer(void **plhs, int nrhs, void *prhs[])
 {
@@ -51,8 +58,7 @@ status rcvCmdFromClient()
 	int sock;
 	char rcvbuf[256];
 	char sendbuf[256];	
-	char filename[32];	
-	char rwFlag[1];
+	char filename[32];		
 	unsigned int bufsize;
 	unsigned int filesize;
 	uint8_t buffer[1024];
@@ -147,8 +153,7 @@ status rcvCmdFromClient()
 			closeSocket(sock);
 			return noConn;
 		}
-		strcpy(filename,rcvbuf);
-		printf("Filename: %s\n",filename);
+		strcpy(filename,rcvbuf);		
 		
 		st = ssend(sock,INPUT_OK,32);
 		if(st)
@@ -229,15 +234,42 @@ status rcvCmdFromClient()
 		device_size = ((double)(max_lba+1))*block_size/(1024*1024*1024);
 		printf("   Max LBA: %08X, Block Size: %08X (%.2f GB)\n", max_lba, block_size, device_size);
 		
+		data = malloc(1024);
+		dataPtr = 0;
+		memset(data, 0, 1024);
+		
 		if (rwFlag[0]=='r')
-		{
-			
+		{			
+			st = msd_read(handle, (uint8_t*)data, 0, 1024);
+			if (st)
+			{
+				printf("Read File %s failed!\n",filename);
+				st = ssend(sock,INPUT_FAILED,32);
+				if(st)
+				{
+					setLastErr("Verbindung unterbrochen!\n");		
+					closeSocket(sock);
+					return noConn;
+				}
+				return msdReadFailed;
+			}	
+			if (strcmp(data,filename))
+			{
+				printf("File not found\n");
+				st = ssend(sock,NO_FILE,32);
+				if(st)
+				{
+					setLastErr("Verbindung unterbrochen!\n");		
+					closeSocket(sock);
+					return noConn;
+				}
+				return noFile;
+			}		
+			printf("Filename: %s opened.\n",filename);
+			dataPtr+=strlen(filename)+1;
 		}
 		else if (rwFlag[0]=='w')
-		{
-			data = malloc(1024);
-			dataPtr = 0;
-			memset(data, 0, 1024);
+		{			
 			strcpy(data,filename);
 			dataPtr+=strlen(filename)+1;																							
 		}
@@ -276,6 +308,24 @@ status rcvCmdFromClient()
 			return noConn;
 		}		
 	}
+	else if (!strcmp(rcvbuf,CMD_GET_FILESIZE_MSD))
+	{		
+		i=0;
+		while(i<1024)
+		{
+			if (!strcmp(data+i,"EOF")) break;
+			i++;
+		}
+		filesize = i+3;
+		memcpy(sendbuf,&filesize,sizeof(unsigned int));
+		st = ssend(sock,sendbuf,32);
+		if(st)
+		{
+			setLastErr("Verbindung unterbrochen!\n");		
+			closeSocket(sock);
+			return noConn;
+		}		
+	}
 	else if (!strcmp(rcvbuf,CMD_READ_FILE))
 	{
 		st = ssend(sock,INPUT_OK,32);
@@ -296,6 +346,36 @@ status rcvCmdFromClient()
 		//printf("Bytes to read: %d\n",*(unsigned int*)rcvbuf);
 		
 		fread(sendbuf,1,*(unsigned int*)rcvbuf,file);
+		
+		st = ssend(sock,sendbuf,32);
+		if(st)
+		{
+			setLastErr("Verbindung unterbrochen!\n");		
+			closeSocket(sock);
+			return noConn;
+		}	
+	}
+	else if (!strcmp(rcvbuf,CMD_READ_FILE_MSD))
+	{
+		st = ssend(sock,INPUT_OK,32);
+		if(st)
+		{
+			setLastErr("Verbindung unterbrochen!\n");		
+			closeSocket(sock);
+			return noConn;
+		}
+		
+		st = srcv(sock,rcvbuf,32);
+		if(st)
+		{
+			setLastErr("Verbindung unterbrochen!\n");		
+			closeSocket(sock);
+			return noConn;
+		}
+		//printf("Bytes to read: %d\n",*(unsigned int*)rcvbuf);
+				
+		memcpy(sendbuf,data+dataPtr,*(unsigned int*)rcvbuf);
+		dataPtr+=*(unsigned int*)rcvbuf;
 		
 		st = ssend(sock,sendbuf,32);
 		if(st)
@@ -411,19 +491,23 @@ status rcvCmdFromClient()
 		}	
 	}
 	else if (!strcmp(rcvbuf,CMD_CLOSE_FILE_MSD))
-	{				
-		st = msd_write(handle, (uint8_t*)data, 0, 1024);
-		if(st)
+	{	
+		if (rwFlag[0]=='w')
 		{
-			printf("Write File failed!\n");
-			st = ssend(sock,INPUT_FAILED,32);
+			strcpy(data+dataPtr,"EOF");
+			st = msd_write(handle, (uint8_t*)data, 0, 1024);
 			if(st)
 			{
-				setLastErr("Verbindung unterbrochen!\n");		
-				closeSocket(sock);
-				return noConn;
+				printf("Write File failed!\n");
+				st = ssend(sock,INPUT_FAILED,32);
+				if(st)
+				{
+					setLastErr("Verbindung unterbrochen!\n");		
+					closeSocket(sock);
+					return noConn;
+				}
+				return msdWriteFailed;
 			}
-			return msdWriteFailed;
 		}
 		msd_close_dev(handle);
 		free(data);
@@ -457,27 +541,7 @@ status openFile(char *filename, char *rwflag)
 	void *prhs[3];
 	void *plhs;
 	
-	prhs[0] = CMD_OPEN_FILE;
-	prhs[1] = filename;
-	prhs[2] = rwflag;
-	st = sendCmdToServer(&plhs, 3, prhs);
-	if(st) return inFailed;
-	if (!strcmp(plhs,NO_FILE))
-	{
-		free(plhs);
-		return noFile;
-	}
-	
-	return ok;
-}
-
-status openFileMSD(char *filename, char *rwflag)
-{
-	status st;
-	void *prhs[3];
-	void *plhs;
-	
-	prhs[0] = CMD_OPEN_FILE_MSD;
+	if (medium==sdcard) prhs[0] = CMD_OPEN_FILE; else prhs[0] = CMD_OPEN_FILE_MSD;
 	prhs[1] = filename;
 	prhs[2] = rwflag;
 	st = sendCmdToServer(&plhs, 3, prhs);
@@ -497,7 +561,7 @@ unsigned int getFilesize()
 	void *prhs[1];
 	void *plhs;
 	
-	prhs[0] = CMD_GET_FILESIZE;
+	if (medium==sdcard) prhs[0] = CMD_GET_FILESIZE; else prhs[0] = CMD_GET_FILESIZE_MSD;
 	sendCmdToServer(&plhs,1,prhs);
 	filesize = *(unsigned int*)plhs;
 	free(plhs);
@@ -511,7 +575,7 @@ status readFile(char *buf, unsigned int sz)
 	void *prhs[2];
 	void *plhs;
 	
-	prhs[0] = CMD_READ_FILE;	
+	if (medium==sdcard) prhs[0] = CMD_READ_FILE; else prhs[0] = CMD_READ_FILE_MSD;
 	prhs[1] = &sz;	
 	st = sendCmdToServer(&plhs,2,prhs);	
 	memcpy(buf,plhs,sz);
@@ -526,22 +590,7 @@ status writeFile(char *buf, unsigned int sz)
 	void *prhs[3];
 	void *plhs;
 	
-	prhs[0] = CMD_WRITE_FILE;
-	prhs[1] = &sz;
-	prhs[2] = buf;	
-	st = sendCmdToServer(&plhs, 3, prhs);	
-	free(plhs);
-	
-	return st;
-}
-
-status writeFileMSD(char *buf, unsigned int sz)
-{
-	status st;
-	void *prhs[3];
-	void *plhs;
-	
-	prhs[0] = CMD_WRITE_FILE_MSD;
+	if (medium==sdcard) prhs[0] = CMD_WRITE_FILE; else prhs[0] = CMD_WRITE_FILE_MSD;
 	prhs[1] = &sz;
 	prhs[2] = buf;	
 	st = sendCmdToServer(&plhs, 3, prhs);	
@@ -556,20 +605,7 @@ status closeFile()
 	void *prhs[1];
 	void *plhs;
 	
-	prhs[0] = CMD_CLOSE_FILE;
-	st = sendCmdToServer(&plhs,1,prhs);
-	free(plhs);
-	
-	return st;
-}
-
-status closeFileMSD()
-{
-	status st;
-	void *prhs[1];
-	void *plhs;
-	
-	prhs[0] = CMD_CLOSE_FILE_MSD;
+	if (medium==sdcard) prhs[0] = CMD_CLOSE_FILE; else prhs[0] = CMD_CLOSE_FILE_MSD;
 	st = sendCmdToServer(&plhs,1,prhs);
 	free(plhs);
 	
