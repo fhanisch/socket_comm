@@ -19,10 +19,10 @@ void setMedium(speichermedium m)
 status sendCmdToServer(void **plhs, int nrhs, void *prhs[])
 {
 	status st;
-	int sock;
-	char *rcvbuf=malloc(256);
+	int sock;	
 	unsigned int i;
 	
+	*plhs = malloc(256);
 	sock = getClientSocket();
 	for (i=0;i<nrhs;i++)
 	{
@@ -34,20 +34,19 @@ status sendCmdToServer(void **plhs, int nrhs, void *prhs[])
 			return noConn;
 		}
 	
-		st = srcv(sock,rcvbuf,32);
+		st = srcv(sock,*plhs,32);
 		if(st)
 		{
 			setLastErr("Verbindung unterbrochen!\n");		
 			closeSocket(sock);
 			return noConn;
 		}				
-		if (!strcmp(rcvbuf,INPUT_FAILED))
+		if (!strcmp(*plhs,INPUT_FAILED))
 		{
-			printf("Status: %s\n",rcvbuf);
+			printf("Status: %s\n",(char*)*plhs);
 			return inFailed;
 		}
-	}
-	*plhs = rcvbuf;
+	}	
 	
 	return ok;
 }
